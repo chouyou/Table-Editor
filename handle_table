@@ -1,0 +1,270 @@
+handle_table=(tb)=>{
+        /** cells 最大列数 ，offset被合并掉的偏移*/
+        let cells=0,data=[],offset=new Array(tb.rows.length).fill(0);
+        for(let i=0,temp=tb.rows[0];i<temp.cells.length;i++){cells+=temp.cells[i].colSpan};
+        for(let i=0;i<tb.rows.length*cells;i++){
+            let r=Math.ceil((i+1)/cells)-1,c=i%cells;
+            let n=tb.rows[r].cells[c-offset[r]];
+            if(data[i]){
+                offset[r]++;
+            }else{
+                let tol=n.rowSpan*n.colSpan;
+                for(let y=0;y<tol;y++){
+                    let cell =y%n.colSpan,
+                    row=Math.ceil((y+1)/n.colSpan)-1;
+                    data[(row+r)*cells+cell+c]=n;
+                }
+            }
+        }
+        let isTag=function(el,tag){
+            if(el&&el.tagName&&(el.tagName.toLowerCase()==tag))return true;
+            return false;
+        }
+        let renametag=function(n,v){
+            let t=document.createElement(v),ns=n.attributes;
+            t.innerHTML=n.innerHTML;
+            for(let i=0;i<ns.length;i++){
+                ns[i].value&&t.setAttribute(ns[i].name,ns[i].value)
+            }
+            n.parentNode.replaceChild(t,n);
+            return t
+        }
+        let inrow=function(node,bool){
+            let index=data.indexOf(node),rowIndex=Math.ceil((index+1)/cells)-1,t,toi=0,rowi,
+            tr=node.parentNode,pn=tr.parentNode,inrow=tb.insertRow(rowIndex+bool),rdi=rowIndex*cells,note=null;
+            for(let i=0;i<cells;i++){
+                bool?toi=rdi+i+cells:toi=rdi+i-cells;bool?rowi=pn.children.length-2:rowi=1;
+                let td=data[rdi+i],totd=data[toi];
+                if(tr==pn.children[rowi]||td.rowSpan==1||td!=totd){
+                    t=inrow.insertCell();deploy(t,td)
+                }else{
+                    td==note||td.rowSpan++;note=td;
+                }
+            }
+        }
+        let incell=function(node,bool){
+            let index,cell=data.indexOf(node)%cells,t,note=null;
+            for(let i=0;i<tb.rows.length;i++){
+                let tdi=cells*i+cell;
+                if((bool&&data[tdi]==data[tdi+1])||(!bool&&data[tdi]==data[tdi-1])){
+                    data[tdi]==note||data[tdi].colSpan++;note=data[tdi];
+                }else{
+                    let ctd=data[tdi];
+                    for(let j=tdi;ctd==data[j-cells]&&j>i*cells;--j,ctd=data[j]);
+                    index=ctd.cellIndex+bool;
+                    if(ctd==data[tdi-cells])index=ctd.cellIndex+bool-1;
+                    t=tb.rows[i].insertCell(index),deploy(t,data[tdi])
+                }
+            }
+        }
+        /** t:插入的节点，td：本行节点 */
+        let deploy=function(t,td){
+            t.innerHTML='<br>';
+            t.setAttribute('contenteditable',true);
+            t.classList.add('ck-editor__editable','ck-editor__nested-editable');
+            (isTag(t.parentNode.parentNode,'thead')||isTag(td,'th'))&&renametag(t,'th')
+        }
+        /**
+         * 对rowSpan>1节点，水平拆分,标题行使用
+         * @param {节点所在行} row 
+         * @param {准备拆分的节点} node 
+         * @param {0 从行上部拆，1 从行下部拆} i 
+         * @param {拆分偏移位置} x 
+         */
+        let horizon=function(row,node,i,f){
+            let frow=(row+i)*cells,tdi=frow+data.indexOf(node)%cells,ctd=data[tdi],nd;
+            for(let j=tdi;ctd==data[j-cells]&&j>frow;--j,ctd=data[j]);
+            nd=tb.rows[row+i].insertCell(ctd.cellIndex+1);
+            nd.colSpan=node.colSpan,nd.rowSpan=node.rowSpan-f,
+            node.rowSpan=f;
+            return deploy(nd,node),nd
+        }
+        return {
+            setcellstyle:(node,k,v)=>{
+                let index=node.cellIndex;
+            },
+            /** 在上面插入行 */ 
+            inrowup:(node)=>inrow(node,0),
+            /** 在上面插入行 */ 
+            inrowbelow:(node)=>inrow(node,1),
+            /** 删除行 */ 
+            rmrow:(node)=>{
+                let index=data.indexOf(node),rowIndex=Math.ceil((index+1)/cells)-1,rdi=rowIndex*cells,upi=rdi-cells,t,note=null,tr=node.parentNode;
+                for(let i=0;i<cells;i++){
+                    let td =data[rdi+i];
+                    if(td.rowSpan>1){
+                        if(td!=data[upi+i]){
+                            td==note||(t=tr.nextSibling.insertCell(data[rdi+i].cellIndex),deploy(t,td),t.rowSpan=td.rowSpan-1,t.colSpan=td.colSpan);
+                        }else{
+                            td==note||td.rowSpan--;
+                        }note=td;
+                    }
+                }tr.remove(true)
+            },
+            /** 在左面插入列 */ 
+            incellleft:(node)=>{
+                incell(node,0)
+            },
+            /** 在右面插入列 */ 
+            incellright:(node)=>{
+                incell(node,1)
+            },
+            /** 删除列 */ 
+            rmcell:(node)=>{
+                let index=data.indexOf(node),cellIndex=index%cells,note=null;
+                for(let i=0;i<tb.rows.length;i++){
+                    let td =data[i*cells+cellIndex];
+                    if(td.colSpan>1){
+                        td==note||td.colSpan--;note=td;
+                    }else{
+                        td.remove(true)
+                    }
+                }
+            },
+            /** 标题列 */
+            titlecol:(node,state)=>{
+                let index=node.cellIndex,row=node.parentNode.rowIndex,t,n=0,nd;
+                state?(t='th'):(t='td');
+                if(state){
+                    for(i=0;i<tb.rows.length;i++){
+                        for(let j=0;j<=index;j++){
+                            nd=data[i*cells+j];
+                            isTag(tb.rows[i].parentNode,'tbody')&&nd!=data[i*cells+j-1] &&renametag(nd,'th')
+                        }
+                    }
+                }else{
+                    for(i=row*cells+index;i<(row+1)*cells&&isTag(data[i],'th');++i,++n);
+                    for(i=0;i<tb.rows.length;i++){
+                        for(let j=0;j<n;j++){
+                            nd=data[i*cells+j+index];
+                            isTag(tb.rows[i].parentNode,'tbody')&&nd!=data[i*cells+j+index-1]&&renametag(nd,'td')
+                        } 
+                    }
+                }
+                tb.rows[row].cells[index].focus()
+            },
+            /** 标题行 */
+            titlerow:(node,state)=>{
+                let tbody=tb.tBodies[0],tr=node.parentNode,thead=tb.tHead,n=tbody.firstChild,row=tr.rowIndex,index=node.cellIndex,nd=null;
+                for(i=row*cells;i<row*cells+cells;i++){
+                    if(state){
+                        if(data[i]==data[i+cells]){
+                            let f=row-data[i].parentNode.rowIndex+1;
+                            horizon(row,data[i],1,f)
+                        }
+                    }else{
+                        if(data[i]==data[i-cells]){
+                            let f=row-data[i].parentNode.rowIndex;
+                            horizon(row,data[i],0,f)
+                        }
+                    }
+                }
+                if(state){
+                    for(;nd!=tr;){
+                        nd=thead.appendChild(tbody.firstChild);
+                        for(i=0;i<nd.cells.length;i++){
+                            renametag(nd.cells[i],'th')
+                        }
+                    }
+                }else{
+                    for(;nd!=tr;){
+                        nd=tbody.insertBefore(thead.lastChild,tbody.firstChild);
+                        for(i=0;i<nd.cells.length;i++){
+                            n?(isTag( n.cells[i],'td')&&renametag(nd.cells[i],'td')):renametag(nd.cells[i],'td')
+                        }
+                    }
+                }
+                //td=tb.rows[row].cells[index];
+                
+                tb.rows[row].cells[index].focus()
+            },
+            /** 向上合并 */     
+            mergeup:(node)=>{
+                let tag=false,tg=null,index=data.indexOf(node);
+                tg=data[index-cells];
+                tg&&(tg.parentNode.parentNode==node.parentNode.parentNode)&&(tg.colSpan==node.colSpan)&&(tag=true)
+                return {
+                    is:tag,
+                    exec:()=>{if(tag){tg.rowSpan=tg.rowSpan+node.rowSpan,node.remove(true);return tg}else return !1}
+                }
+            },
+            /** 向下合并 */ 
+            mergedown:(node)=>{
+                let tag=false,tg=null,index=data.indexOf(node);
+                tg=data[index+node.rowSpan*cells];
+                tg&&(tg.parentNode.parentNode==node.parentNode.parentNode)&&(tg.colSpan==node.colSpan)&&(tag=true)
+                return {
+                    is:tag,
+                    exec:()=>{if(tag){node.rowSpan=tg.rowSpan+node.rowSpan,tg.remove(true);return node}else return !1}
+                }
+            },
+            /** 向左合并 */ 
+            mergeleft:(node)=>{
+                let tag=false,tg=null,index=data.indexOf(node);
+                tg=data[index-1];
+                tg&&(tg.rowSpan==node.rowSpan)&&(tg.tagName==node.tagName)&&(index%cells)>0&&(tag=true);
+                return {
+                    is:tag,
+                    exec:()=>{if(tag){tg.colSpan=tg.colSpan+node.colSpan,node.remove(true);return tg}else return !1}
+                }
+            },
+            /** 向右合并 */ 
+            mergeright:(node)=>{
+                let tag=false,tg=null,index=data.indexOf(node);
+                tg=data[index+node.colSpan];
+                tg&&tg.rowSpan==node.rowSpan&&(tg.tagName==node.tagName)&&(index+node.colSpan)%cells!=0&&(tag=true);
+                return {
+                    is:tag,
+                    exec:()=>{if(tag){node.colSpan=tg.colSpan+node.colSpan,tg.remove(true);return node}else return !1}
+                }
+            },
+            /** 水平拆分 */ 
+            splithorizon:(node)=>{
+                let row=node.parentNode.rowIndex,one=[],nd;
+                 nd= data.slice(row*cells,row*cells+cells);
+                 nd.filter(i=>one.includes(i)||one.push(i));
+                return {
+                    is:true,
+                    exec:()=>{
+                        if(node.rowSpan==1){
+                            one.filter(i=>i.rowSpan+=1);
+                            nd=tb.insertRow(row+1).insertCell(0);
+                            node.rowSpan-=1;
+                        }else{
+                            let c= Math.ceil(node.rowSpan/2);
+                            let frow=(row+c)*cells,tdi=frow+data.indexOf(node)%cells,ctd=data[tdi];
+                            for(let j=tdi;ctd==data[j-cells]&&j>frow;--j,ctd=data[j]);
+                            nd=tb.rows[row+c].insertCell(ctd.cellIndex+1);
+                            nd.rowSpan=node.rowSpan-c;
+                            node.rowSpan=c;
+                        }
+                        nd.colSpan=node.colSpan,
+                        deploy(nd,node);
+                    }
+                }
+            },
+            /** 垂直拆分 */ 
+            splitvertical:(node)=>{
+                let index=data.indexOf(node),tm=[],one=[];
+                for(let i=0;i<tb.rows.length;i++)tm.push(data[i*cells+index%cells]);
+                tm.filter(i=>one.includes(i)||one.push(i));
+                return {
+                    is:true,
+                    exec:()=>{
+                        if(node.colSpan==1){
+                            one.filter(i=>i&&(i.colSpan+=1)),
+                            tm=node.parentNode.insertCell(node.cellIndex+1),
+                            node.colSpan-=1;
+                        }else{
+                            let c= Math.ceil(node.colSpan/2);
+                            tm=node.parentNode.insertCell(node.cellIndex+1),
+                            tm.colSpan=node.colSpan-c;
+                            node.colSpan=c;
+                        }
+                        tm.rowSpan=node.rowSpan,
+                        deploy(tm,node);
+                    }
+                }
+            },
+        }
+    }

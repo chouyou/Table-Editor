@@ -80,12 +80,9 @@ handle_table=(tb)=>{
             return deploy(nd,node),nd
         }
         return {
-            setcellstyle:(node,k,v)=>{
-                let index=node.cellIndex;
-            },
-            /** 在上面插入行 */ 
+            /** 在上方插入行 */ 
             inrowup:(node)=>inrow(node,0),
-            /** 在上面插入行 */ 
+            /** 在下方插入行 */ 
             inrowbelow:(node)=>inrow(node,1),
             /** 删除行 */ 
             rmrow:(node)=>{

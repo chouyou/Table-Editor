@@ -61,7 +61,7 @@ handle_table=(tb)=>{
         let deploy=function(t,td){
             t.innerHTML='<br>';
             t.setAttribute('contenteditable',true);
-            t.classList.add('ck-editor__editable','ck-editor__nested-editable');
+            t.classList.add('xxxxxx');
             (isTag(t.parentNode.parentNode,'thead')||isTag(td,'th'))&&renametag(t,'th')
         }
         /**
